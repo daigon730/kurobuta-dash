@@ -1,0 +1,1341 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
+    <meta name="color-scheme" content="light" />
+    <link rel="icon" href="data:," />
+    <title>Kurobuta Dash 試作（ボタン連打＆傾き版）</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@500;700;800&display=swap" rel="stylesheet" />
+    <script src="https://unpkg.com/lucide@0.469.0/dist/umd/lucide.min.js" integrity="sha384-hJnF5AwidE18GSWTAGHv3ByzzvfNZ1Tcx5y1UUV3WkauuMCEzBJBMSwSt/PUPXnM" crossorigin="anonymous"></script>
+    <style>
+      :root{
+        --ink:#2b1c10;
+        --paper:#fff8ec;
+        --accent:#e4572e;      /* 焼けたオレンジ */
+        --accent-deep:#c33f1d;
+        --leaf:#4c956c;
+        --leaf-deep:#35704d;
+        --gold:#f2a007;
+        --pig:#26221f;
+        --danger:#d7263d;
+        --hud-bg:rgba(43,28,16,.82);
+      }
+      *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+      html,body{height:100%;}
+      body{
+        margin:0;
+        font-family:"M PLUS Rounded 1c",system-ui,-apple-system,"Hiragino Maru Gothic ProN",sans-serif;
+        color:var(--ink);
+        background:#1d130b;
+        overflow:hidden;
+        overscroll-behavior:none;
+      }
+      #app{
+        position:fixed;inset:0;
+        display:flex;flex-direction:column;
+        max-width:560px;margin:0 auto;
+        background:#f7b267;
+        box-shadow:0 0 60px rgba(0,0,0,.5);
+      }
+      /* ---------- HUD ---------- */
+      #hud{
+        position:absolute;top:0;left:0;right:0;z-index:5;
+        padding:calc(8px + env(safe-area-inset-top)) 56px 8px 10px;
+        display:none;flex-direction:column;gap:6px;
+        pointer-events:none;
+      }
+      #hud.on{display:flex;}
+      .hud-row{display:flex;gap:6px;align-items:stretch;}
+      .hud-chip{
+        background:var(--hud-bg);color:#fff;
+        border-radius:12px;padding:5px 10px;
+        display:flex;align-items:center;gap:6px;
+        font-weight:800;line-height:1.1;
+        backdrop-filter:blur(2px);
+      }
+      .hud-chip .lbl{font-size:10px;font-weight:700;opacity:.75;letter-spacing:.04em;}
+      .hud-chip .val{font-size:19px;font-variant-numeric:tabular-nums;}
+      .hud-chip .unit{font-size:11px;opacity:.8;font-weight:700;}
+      .hud-chip svg{width:16px;height:16px;flex:none;}
+      .hud-chip.grow{flex:1;}
+      .meter-wrap{flex:1;display:flex;flex-direction:column;gap:3px;justify-content:center;min-width:70px;}
+      .meter{height:9px;border-radius:99px;background:rgba(255,255,255,.22);overflow:hidden;}
+      .meter > i{display:block;height:100%;border-radius:99px;transition:width .12s linear;}
+      #speedFill{background:var(--gold);width:0%;}
+      #gapFill{background:#7bd88f;width:100%;}
+      #gapChip.danger{background:rgba(160,20,35,.9);animation:blink .5s steps(2) infinite;}
+      @keyframes blink{50%{filter:brightness(1.35);}}
+      #shakeRow .meter > i{background:var(--accent);}
+      #shakeFill{width:0%;}
+      /* ---------- Sound toggle ---------- */
+      #soundBtn{
+        position:absolute;top:calc(8px + env(safe-area-inset-top));right:10px;z-index:30;
+        width:40px;height:40px;border-radius:50%;border:none;cursor:pointer;
+        background:var(--hud-bg);color:#fff;
+        display:flex;align-items:center;justify-content:center;
+      }
+      #soundBtn svg{width:20px;height:20px;}
+      #soundBtn .ic-off{display:none;}
+      #soundBtn.off .ic-on{display:none;}
+      #soundBtn.off .ic-off{display:block;}
+      #soundBtn:active{transform:scale(.94);}
+      /* ---------- Canvas ---------- */
+      #stage{position:relative;flex:1;min-height:0;}
+      canvas{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none;}
+      #flashMsg{
+        position:absolute;left:50%;top:34%;transform:translate(-50%,-50%) scale(.8);
+        font-size:clamp(30px,9vw,52px);font-weight:800;color:#fff;
+        text-shadow:0 3px 0 var(--accent-deep),0 6px 18px rgba(0,0,0,.35);
+        opacity:0;pointer-events:none;z-index:4;white-space:nowrap;
+      }
+      #flashMsg.pop{animation:pop .9s ease-out forwards;}
+      @keyframes pop{
+        0%{opacity:0;transform:translate(-50%,-50%) scale(.6);}
+        18%{opacity:1;transform:translate(-50%,-50%) scale(1.08);}
+        30%{transform:translate(-50%,-50%) scale(1);}
+        75%{opacity:1;}
+        100%{opacity:0;transform:translate(-50%,-56%) scale(1);}
+      }
+      #sensorNote{
+        position:absolute;left:50%;bottom:8px;transform:translateX(-50%);
+        background:rgba(43,28,16,.88);color:#ffe9c9;font-size:12px;font-weight:700;
+        padding:8px 14px;border-radius:14px;display:none;z-index:4;
+        width:max-content;max-width:92%;text-align:center;line-height:1.55;
+      }
+      /* sensor check panel (start screen) */
+      .sensor-check{
+        background:rgba(255,248,236,.92);border:2px solid rgba(43,28,16,.14);
+        border-radius:16px;padding:12px 14px;margin:0 0 16px;max-width:350px;width:100%;
+        text-align:left;
+      }
+      .sc-head{font-size:13px;font-weight:800;letter-spacing:.06em;color:#7a4416;display:flex;align-items:center;gap:6px;}
+      .sc-head svg{width:15px;height:15px;flex:none;}
+      .sc-badge{margin-left:auto;font-size:11px;font-weight:800;padding:3px 9px;border-radius:99px;background:#d8c9ae;color:#5d4a26;letter-spacing:0;white-space:nowrap;}
+      .sc-badge.ok{background:var(--leaf);color:#fff;}
+      .sc-badge.bad{background:var(--danger);color:#fff;}
+      .sc-diag{margin-top:10px;border-top:1.5px dashed rgba(43,28,16,.18);padding-top:8px;display:flex;flex-direction:column;gap:3px;}
+      .sc-drow{display:flex;gap:8px;font-size:11.5px;font-weight:700;color:rgba(43,28,16,.6);line-height:1.45;}
+      .sc-drow b{margin-left:auto;text-align:right;color:var(--ink);font-weight:800;font-variant-numeric:tabular-nums;}
+      .btn-start{background:var(--leaf);box-shadow:0 6px 0 var(--leaf-deep);font-size:18px;padding:14px 30px;width:100%;max-width:350px;margin-top:12px;}
+      .btn-start:active{transform:translateY(4px);box-shadow:0 2px 0 var(--leaf-deep);}
+      .btn-start:disabled{opacity:.45;filter:grayscale(.35);cursor:not-allowed;box-shadow:0 6px 0 rgba(43,28,16,.3);}
+      .btn-start:disabled:active{transform:none;}
+      .sc-grid{display:flex;gap:14px;margin-top:10px;}
+      .sc-item{flex:1;min-width:0;}
+      .sc-lbl{font-size:11px;font-weight:700;color:rgba(43,28,16,.65);}
+      .sc-track{position:relative;height:10px;border-radius:99px;background:rgba(43,28,16,.14);margin-top:5px;}
+      .sc-track.clip{overflow:hidden;}
+      .sc-needle{position:absolute;top:-2px;left:50%;width:6px;height:14px;border-radius:3px;background:var(--accent-deep);transform:translateX(-50%);transition:left .08s linear;}
+      .sc-bar{position:absolute;left:0;top:0;bottom:0;width:0%;background:var(--accent);border-radius:99px;}
+      .sc-note{font-size:11.5px;font-weight:700;color:rgba(43,28,16,.62);line-height:1.6;margin:9px 0 0;}
+      /* ---------- Controls ---------- */
+      #controls{
+        position:relative;z-index:5;
+        display:none;gap:10px;align-items:stretch;
+        padding:10px 12px calc(10px + env(safe-area-inset-bottom));
+        background:linear-gradient(180deg,rgba(59,36,18,0),rgba(59,36,18,.28) 30%,#3b2412);
+      }
+      #controls.on{display:flex;}
+      .ctl-btn{
+        border:none;cursor:pointer;color:#fff;font-family:inherit;font-weight:800;
+        border-radius:18px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;
+        user-select:none;-webkit-user-select:none;touch-action:none;
+      }
+      .ctl-btn svg{width:26px;height:26px;}
+      .ctl-btn small{font-size:10px;font-weight:700;opacity:.85;}
+      .lane-btn{width:64px;background:#5b4128;box-shadow:0 4px 0 #3a2812;font-size:15px;}
+      .lane-btn:active{transform:translateY(3px);box-shadow:0 1px 0 #3a2812;}
+      #runBtn{
+        flex:1;background:var(--accent);box-shadow:0 5px 0 var(--accent-deep);
+        font-size:19px;padding:10px 6px;letter-spacing:.02em;
+      }
+      #runBtn:active{transform:translateY(4px);box-shadow:0 1px 0 var(--accent-deep);}
+      #runBtn small{font-size:11px;}
+      /* ---------- Overlays ---------- */
+      .screen{
+        position:absolute;inset:0;z-index:10;
+        display:flex;flex-direction:column;align-items:center;justify-content:center;
+        padding:24px 20px calc(20px + env(safe-area-inset-bottom));
+        text-align:center;overflow-y:auto;
+      }
+      #startScreen{background:linear-gradient(180deg,#ffd9a0 0%,#f7b267 46%,#e98a4b 100%);}
+      #overScreen{background:rgba(29,16,8,.88);color:#fff;display:none;}
+      #overScreen.on{display:flex;}
+      .game-logo{
+        font-size:clamp(38px,11vw,58px);font-weight:800;line-height:1.05;letter-spacing:.01em;
+        color:var(--ink);
+      }
+      .game-logo .dash{color:var(--accent-deep);}
+      .logo-sub{
+        margin-top:6px;font-weight:800;font-size:14px;color:#7a4416;
+        display:flex;align-items:center;gap:6px;justify-content:center;
+      }
+      .logo-sub svg{width:15px;height:15px;}
+      .pig-badge{
+        width:104px;height:104px;border-radius:50%;
+        background:#fff3df;border:4px solid var(--ink);
+        display:flex;align-items:center;justify-content:center;margin:16px 0 6px;
+        box-shadow:0 8px 0 rgba(43,28,16,.25);
+      }
+      .pig-badge svg{width:82px;height:82px;}
+      .lead{font-size:15px;font-weight:700;line-height:1.75;margin:10px 0 4px;max-width:340px;padding:0 22px;}
+      .lead b{color:var(--accent-deep);}
+      .howto{
+        background:rgba(255,248,236,.92);border:2px solid rgba(43,28,16,.14);
+        border-radius:16px;padding:12px 14px;margin:14px 0 18px;max-width:350px;width:100%;
+        text-align:left;
+      }
+      .howto h2{font-size:13px;margin:0 0 8px;letter-spacing:.06em;color:#7a4416;display:flex;align-items:center;gap:6px;}
+      .howto h2 svg{width:15px;height:15px;}
+      .howto ul{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:7px;}
+      .howto li{display:flex;gap:9px;font-size:13.5px;font-weight:700;line-height:1.5;align-items:flex-start;}
+      .howto li svg{width:17px;height:17px;flex:none;margin-top:1px;color:var(--accent-deep);}
+      .btn{
+        border:none;cursor:pointer;font-family:inherit;font-weight:800;color:#fff;
+        border-radius:99px;display:inline-flex;align-items:center;gap:8px;justify-content:center;
+        transition:transform .06s;
+      }
+      .btn svg{width:20px;height:20px;}
+      .btn-main{
+        background:var(--accent);box-shadow:0 6px 0 var(--accent-deep);
+        font-size:19px;padding:15px 30px;width:100%;max-width:350px;
+      }
+      .btn-main:active{transform:translateY(4px);box-shadow:0 2px 0 var(--accent-deep);}
+      .btn-sub{
+        background:transparent;color:var(--ink);border:2px solid rgba(43,28,16,.35);
+        font-size:14px;padding:11px 20px;margin-top:12px;
+      }
+      .btn-sub svg{width:16px;height:16px;}
+      .btn-sub:active{transform:scale(.97);}
+      .note{font-size:11.5px;font-weight:700;color:rgba(43,28,16,.62);margin-top:14px;line-height:1.6;max-width:330px;}
+      /* result */
+      .result-title{font-size:clamp(30px,9vw,44px);font-weight:800;line-height:1.15;}
+      .result-title .caught{color:#ff7a5c;}
+      .result-sub{font-weight:700;opacity:.85;margin-top:6px;font-size:14px;}
+      .price-card{
+        width:100%;max-width:340px;margin:18px 0 0;
+        background:linear-gradient(135deg,rgba(242,160,7,.28),rgba(228,87,46,.22));
+        border:2px solid rgba(242,160,7,.65);
+        border-radius:16px;padding:12px 10px 10px;
+      }
+      .price-card .k{font-size:12px;font-weight:800;opacity:.9;display:flex;align-items:center;gap:5px;justify-content:center;color:#ffd98a;}
+      .price-card .k svg{width:15px;height:15px;}
+      .price-card .price-v{font-size:40px;font-weight:800;font-variant-numeric:tabular-nums;line-height:1.15;color:#ffe9a8;}
+      .price-card .price-sub{font-size:12.5px;font-weight:700;opacity:.85;}
+      .stats{
+        display:grid;grid-template-columns:1fr 1fr;gap:8px;
+        width:100%;max-width:340px;margin:12px 0 20px;
+      }
+      .stat{
+        background:rgba(255,255,255,.09);border:1.5px solid rgba(255,255,255,.16);
+        border-radius:14px;padding:10px 8px;
+      }
+      .stat .k{font-size:11px;font-weight:700;opacity:.7;display:flex;align-items:center;gap:5px;justify-content:center;}
+      .stat .k svg{width:13px;height:13px;}
+      .stat .v{font-size:26px;font-weight:800;font-variant-numeric:tabular-nums;line-height:1.2;}
+      .stat .v small{font-size:12px;opacity:.7;}
+      #overScreen .btn-sub{color:#fff;border-color:rgba(255,255,255,.4);}
+      .btn-x{
+        background:#000;box-shadow:0 5px 0 #333;font-size:15px;padding:12px 22px;margin-top:12px;width:100%;max-width:350px;
+      }
+      .btn-x:active{transform:translateY(3px);box-shadow:0 2px 0 #333;}
+      #overScreen .btn-main{margin-top:2px;}
+      @media (min-width:700px){
+        #app{border-left:1px solid rgba(0,0,0,.4);border-right:1px solid rgba(0,0,0,.4);}
+      }
+      @media (prefers-reduced-motion:reduce){
+        #gapChip.danger{animation:none;}
+        #flashMsg.pop{animation-duration:.01s;}
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app">
+      <!-- HUD -->
+      <div id="hud">
+        <div class="hud-row">
+          <div class="hud-chip grow">
+            <i data-lucide="milestone"></i>
+            <div><div class="lbl">逃げた距離</div><div><span class="val" id="hudDist">0</span> <span class="unit">m</span></div></div>
+          </div>
+          <div class="hud-chip">
+            <i data-lucide="star"></i>
+            <div><div class="lbl">スコア</div><div class="val" id="hudScore">0</div></div>
+          </div>
+          <div class="hud-chip">
+            <i data-lucide="timer"></i>
+            <div><div class="lbl">時間</div><div><span class="val" id="hudTime">0.0</span></div></div>
+          </div>
+        </div>
+        <div class="hud-row">
+          <div class="hud-chip grow">
+            <i data-lucide="gauge"></i>
+            <div class="meter-wrap">
+              <div class="lbl">黒豚スピード <span id="hudSpeed" style="font-size:12px;opacity:1;">0 km/h</span></div>
+              <div class="meter"><i id="speedFill"></i></div>
+            </div>
+          </div>
+          <div class="hud-chip grow" id="gapChip">
+            <i data-lucide="truck"></i>
+            <div class="meter-wrap">
+              <div class="lbl">出荷トラックとの距離 <span id="hudPhase" style="color:#ffb59d;font-size:11px;">Lv.1</span></div>
+              <div class="meter"><i id="gapFill"></i></div>
+            </div>
+          </div>
+        </div>
+        <div class="hud-row" id="shakeRow">
+          <div class="hud-chip grow">
+            <i data-lucide="zap"></i>
+            <div class="meter-wrap">
+              <div class="lbl">ダッシュパワー（連打で上がる）</div>
+              <div class="meter"><i id="shakeFill"></i></div>
+            </div>
+          </div>
+        </div>
+        <div class="hud-row">
+          <div class="hud-chip">
+            <i data-lucide="sprout"></i>
+            <div><div class="lbl">さつまいも</div><div><span class="val" id="hudImo">0</span> <span class="unit">個</span></div></div>
+          </div>
+          <div class="hud-chip grow">
+            <i data-lucide="trending-up"></i>
+            <div><div class="lbl">成長：<span id="hudStage">子豚</span></div><div><span class="val" id="hudWeight">25</span> <span class="unit">kg</span></div></div>
+          </div>
+          <div class="hud-chip">
+            <i data-lucide="coins"></i>
+            <div><div class="lbl">いまの出荷金額</div><div><span class="unit">¥</span><span class="val" id="hudPrice">0</span></div></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Sound toggle -->
+      <button id="soundBtn" aria-label="サウンドのオン・オフ">
+        <span class="ic-on"><i data-lucide="volume-2"></i></span>
+        <span class="ic-off"><i data-lucide="volume-x"></i></span>
+      </button>
+
+      <!-- Stage -->
+      <div id="stage">
+        <canvas id="game"></canvas>
+        <div id="flashMsg"></div>
+        <div id="sensorNote">傾きセンサー無反応…レーン移動は画面の左右ボタンでOK</div>
+
+        <!-- Start screen -->
+        <div class="screen" id="startScreen">
+          <div class="game-logo">Kurobuta<br /><span class="dash">Dash</span></div>
+          <div class="logo-sub"><i data-lucide="gamepad-2"></i>ボタン連打＆傾き版・試作</div>
+          <div class="pig-badge" aria-hidden="true">
+            <svg viewBox="0 0 100 100">
+              <ellipse cx="50" cy="58" rx="34" ry="28" fill="#26221f"/>
+              <circle cx="50" cy="34" r="19" fill="#26221f"/>
+              <path d="M34 24 L28 8 L44 16 Z" fill="#26221f"/>
+              <path d="M66 24 L72 8 L56 16 Z" fill="#26221f"/>
+              <circle cx="43.5" cy="32" r="3" fill="#fff"/>
+              <circle cx="56.5" cy="32" r="3" fill="#fff"/>
+              <ellipse cx="50" cy="42" rx="8.5" ry="6.5" fill="#e8a0a8"/>
+              <circle cx="47" cy="42" r="1.7" fill="#8d4a52"/>
+              <circle cx="53" cy="42" r="1.7" fill="#8d4a52"/>
+              <path d="M84 52 q10 -4 6 -13" stroke="#26221f" stroke-width="4" fill="none" stroke-linecap="round"/>
+              <rect x="34" y="80" width="8" height="10" rx="3" fill="#26221f"/>
+              <rect x="58" y="80" width="8" height="10" rx="3" fill="#26221f"/>
+            </svg>
+          </div>
+          <p class="lead">あなたは鹿児島の黒豚。出荷トラックに捕まる前に、<b>ボタンを連打して</b>ひたすら逃げろ！</p>
+          <div class="howto">
+            <h2><i data-lucide="gamepad-2"></i>あそびかた</h2>
+            <ul>
+              <li><i data-lucide="mouse-pointer-click"></i><span>下の<b>「走る」ボタン連打</b>で加速する。連打を止めるとトラックに追いつかれる！（PCはスペースキー連打）</span></li>
+              <li><i data-lucide="move-horizontal"></i><span>スマホを<b>左右に傾ける</b>か、画面のボタン／スワイプでレーン移動。柵と出荷箱を避けよう</span></li>
+              <li><i data-lucide="sparkles"></i><span><b>さつまいも</b>を取るとスコア＋加速。さらに<b>食べるほど黒豚が成長</b>して体が大きくなり、<b>出荷金額</b>も上がっていく！ 泥んこは減速するので注意</span></li>
+              <li><i data-lucide="trending-up"></i><span>成長は 子豚→若豚→成豚→立派な黒豚→<b>プレミアム黒豚</b> の5段階。育つほど体重も単価（円/kg）も上がるので、捕まるまでにどれだけ大きくできるかが勝負</span></li>
+              <li><i data-lucide="flame"></i><span>進むほど<b>トラックが加速</b>し、障害物も増えていく。最後まで連打し続けろ！</span></li>
+              <li><i data-lucide="vibrate"></i><span>おまけ：<b>スマホを振る</b>ことでも加速できる</span></li>
+              <li><i data-lucide="music"></i><span><b>BGM</b>つき。トラックが背後に迫ってくると、音楽もテンポアップして緊迫する！</span></li>
+            </ul>
+          </div>
+          <div class="sensor-check" id="sensorCheck">
+            <div class="sc-head"><i data-lucide="activity"></i>センサーチェック<span class="sc-badge" id="scBadge">まだ届いていない</span></div>
+            <div class="sc-grid">
+              <div class="sc-item"><span class="sc-lbl">傾き（左右に傾けてみる）</span><div class="sc-track"><div class="sc-needle" id="scNeedle"></div></div></div>
+              <div class="sc-item"><span class="sc-lbl">振り（おまけ・振ってみる）</span><div class="sc-track clip"><div class="sc-bar" id="scShakeBar"></div></div></div>
+            </div>
+            <div class="sc-diag">
+              <div class="sc-drow"><span>許可の結果</span><b id="scPerm">振り：未確認 ／ 傾き：未確認</b></div>
+              <div class="sc-drow"><span>届いたイベント</span><b id="scCnt">振り 0回 ・ 傾き 0回</b></div>
+              <div class="sc-drow"><span>中身のあるデータ</span><b id="scValid">振り 0回 ・ 傾き 0回</b></div>
+              <div class="sc-drow"><span>いまの値</span><b id="scVals">傾き — ／ 加速度 —</b></div>
+              <div class="sc-drow"><span>表示のされ方</span><b id="scEmbed">確認中…</b></div>
+            </div>
+            <p class="sc-note" id="scNote">まず下のステップ1でモーション許可をもらってください。許可のあとスマホを傾けると、上の表示と数値が動き始め、「受信中！」になるとステップ2が押せるようになります（センサーは傾き操作用。ダッシュはボタン連打なので、許可なしでも遊べます）。</p>
+          </div>
+          <button class="btn btn-main" id="permBtn"><i data-lucide="shield-check"></i>ステップ1：モーション許可をもらう</button>
+          <button class="btn btn-start" id="startBtn" disabled><i data-lucide="play"></i>ステップ2：ゲームスタート</button>
+          <button class="btn btn-sub" id="startPlainBtn"><i data-lucide="hand"></i>センサーなしでスタート（ボタン操作）</button>
+          <p class="note">iPhoneではステップ1で許可ダイアログが出ます。「許可」を押してスマホを左右に軽く傾け、センサーチェックが「受信中！」になったらステップ2が押せます。ダッシュはボタン連打なので、どうしても受信できない環境でも「センサーなしでスタート」からそのまま遊べます。</p>
+        </div>
+
+        <!-- Game over screen -->
+        <div class="screen" id="overScreen">
+          <div class="result-title"><span class="caught">捕まった…！</span></div>
+          <p class="result-sub" id="resultSub">出荷トラックに追いつかれてしまった</p>
+          <div class="price-card">
+            <div class="k"><i data-lucide="coins"></i>育てた黒豚の出荷金額</div>
+            <div class="price-v">¥<span id="stPrice">0</span></div>
+            <div class="price-sub" id="stPriceSub">子豚 ・ 25kg × ¥700/kg</div>
+          </div>
+          <div class="stats">
+            <div class="stat"><div class="k"><i data-lucide="milestone"></i>逃げた距離</div><div class="v"><span id="stDist">0</span><small> m</small></div></div>
+            <div class="stat"><div class="k"><i data-lucide="star"></i>スコア</div><div class="v" id="stScore">0</div></div>
+            <div class="stat"><div class="k"><i data-lucide="sprout"></i>さつまいも</div><div class="v"><span id="stImo">0</span><small> 個</small></div></div>
+            <div class="stat"><div class="k"><i data-lucide="trending-up"></i>成長</div><div class="v" style="font-size:20px;"><span id="stStage">子豚</span><small> ・ </small><span id="stWeight">25</span><small> kg</small></div></div>
+            <div class="stat"><div class="k"><i data-lucide="mouse-pointer-click"></i>連打した回数</div><div class="v"><span id="stShakes">0</span><small> 回</small></div></div>
+            <div class="stat"><div class="k"><i data-lucide="gauge"></i>最高速度</div><div class="v"><span id="stTop">0</span><small> km/h</small></div></div>
+          </div>
+          <button class="btn btn-main" id="retryBtn"><i data-lucide="rotate-ccw"></i>もう一度逃げる</button>
+          <button class="btn btn-x" id="shareBtn"><i data-lucide="share-2"></i>Xで結果をシェア</button>
+          <button class="btn btn-sub" id="toTitleBtn"><i data-lucide="home"></i>タイトルへ戻る</button>
+        </div>
+      </div>
+
+      <!-- Controls -->
+      <div id="controls">
+        <button class="ctl-btn lane-btn" id="leftBtn" aria-label="左へ移動"><i data-lucide="chevron-left"></i><small>左</small></button>
+        <button class="ctl-btn" id="runBtn"><span>走る！（連打）</span><small>連打するほど速くなる</small></button>
+        <button class="ctl-btn lane-btn" id="rightBtn" aria-label="右へ移動"><i data-lucide="chevron-right"></i><small>右</small></button>
+      </div>
+    </div>
+
+    <script>
+    (function(){
+      "use strict";
+      var $ = function(id){ return document.getElementById(id); };
+      var canvas = $("game"), ctx = canvas.getContext("2d");
+      var stage = $("stage");
+      var W=0,H=0,DPR=1;
+
+      function resize(){
+        DPR = Math.min(window.devicePixelRatio||1, 2);
+        W = stage.clientWidth; H = stage.clientHeight;
+        canvas.width = Math.round(W*DPR); canvas.height = Math.round(H*DPR);
+        ctx.setTransform(DPR,0,0,DPR,0,0);
+      }
+      window.addEventListener("resize", resize);
+
+      /* ================= Game state ================= */
+      var MAX_SPEED = 14.5;      // m/s
+      var GAP_MAX = 42;
+      var G = {
+        mode:"title",            // title | playing | over
+        t:0, dist:0, score:0, scoreF:0, shakes:0,
+        speed:0, topSpeed:0, truckSpeed:5.4,
+        gap:30, laneF:0, laneTarget:0,
+        shakePower:0, invincible:0, mudTimer:0, phase:1, lastPhase:1,
+        spawnTimer:1.2, roadOff:0, legPhase:0,
+        warnTimer:0, stepAcc:0, sensorWarned:false, startAt:0,
+        imo:0
+      };
+      /* ===== 成長＆出荷金額：さつまいもを食べるほど育ち、体重×単価で金額が決まる ===== */
+      var STAGES=[
+        {min:0,  name:"子豚",           unit:700},
+        {min:4,  name:"若豚",           unit:850},
+        {min:9,  name:"成豚",           unit:1000},
+        {min:15, name:"立派な黒豚",     unit:1200},
+        {min:23, name:"プレミアム黒豚", unit:1450}
+      ];
+      function growthInfo(imo){
+        var st=STAGES[0];
+        for(var i=0;i<STAGES.length;i++){ if(imo>=STAGES[i].min) st=STAGES[i]; }
+        var weight = 25 + imo*3;                       // さつまいも1個 = +3kg
+        var price = Math.round(weight*st.unit/10)*10;  // 出荷金額 = 体重 × 単価
+        return {stage:st.name, unit:st.unit, weight:weight, price:price};
+      }
+      function growthScale(){ return 1 + Math.min(0.5, G.imo*0.016); } // 見た目も少しずつ大きく（最大1.5倍）
+      var objects = [];   // {lane, z, type}  type: fence|crate|mud|imo
+      var particles = []; // {x,y,vx,vy,life,max,size,color}
+      var rings = [];     // shake feedback rings {life}
+      var clouds = [];
+      for(var ci=0; ci<6; ci++) clouds.push({x:Math.random(), y:Math.random()*0.22, s:0.6+Math.random()*0.9, v:0.004+Math.random()*0.008});
+
+      function reset(){
+        G.t=0; G.dist=0; G.score=0; G.scoreF=0; G.shakes=0;
+        G.speed=5; G.topSpeed=0; G.truckSpeed=5.4;
+        G.gap=30; G.laneF=0; G.laneTarget=0;
+        G.shakePower=0; G.invincible=0; G.mudTimer=0; G.phase=1; G.lastPhase=1;
+        G.spawnTimer=1.4; G.roadOff=0; G.legPhase=0;
+        G.warnTimer=0; G.stepAcc=0; G.sensorWarned=false; G.startAt=performance.now();
+        G.imo=0;
+        objects.length=0; particles.length=0; rings.length=0;
+        $("sensorNote").style.display="none";
+      }
+
+      /* ================= Audio ================= */
+      var AC=null, master=null, soundOn=true;
+      function initAudio(){
+        if(AC) { if(AC.state==="suspended") AC.resume(); return; }
+        try{
+          AC = new (window.AudioContext||window.webkitAudioContext)();
+          master = AC.createGain();
+          master.gain.value = soundOn ? 0.9 : 0;
+          master.connect(AC.destination);
+        }catch(e){ AC=null; }
+      }
+      function tone(freq, dur, type, gain, slideTo, delay){
+        if(!AC) return;
+        var t0 = AC.currentTime + (delay||0);
+        var o = AC.createOscillator(), g = AC.createGain();
+        o.type = type||"sine"; o.frequency.setValueAtTime(freq, t0);
+        if(slideTo) o.frequency.exponentialRampToValueAtTime(slideTo, t0+dur);
+        g.gain.setValueAtTime(gain||0.08, t0);
+        g.gain.exponentialRampToValueAtTime(0.001, t0+dur);
+        o.connect(g); g.connect(master||AC.destination);
+        o.start(t0); o.stop(t0+dur+0.02);
+      }
+      function stepSound(){ tone(70+Math.random()*30, 0.05, "triangle", 0.05, 45); }
+      function pickupSound(){ tone(880,0.09,"sine",0.09); tone(1318,0.14,"sine",0.09,null,0.07); }
+      function growSound(){ tone(523,0.1,"triangle",0.1); tone(659,0.1,"triangle",0.1,null,0.08); tone(784,0.12,"triangle",0.11,null,0.16); tone(1046,0.2,"triangle",0.11,null,0.24); }
+      function crashSound(){ tone(160,0.28,"sawtooth",0.12,55); tone(90,0.3,"square",0.07,40,0.02); }
+      function mudSound(){ tone(300,0.18,"sine",0.08,110); }
+      function warnSound(){ tone(1174,0.09,"square",0.045); }
+      function overSound(){ tone(392,0.22,"triangle",0.1); tone(330,0.22,"triangle",0.1,null,0.2); tone(262,0.4,"triangle",0.11,null,0.4); }
+      function goSound(){ tone(660,0.1,"square",0.07); tone(990,0.22,"square",0.08,null,0.1); }
+
+      /* ================= BGM（WebAudioで自動演奏・外部ファイルなし） =================
+         のどかな「通常ループ」と、トラック接近時の「緊迫ループ」を2バスで用意し、
+         ギャップから決まる tension(0..1) でクロスフェード＋テンポアップさせる。 */
+      var bgm = { on:false, timer:null, step:0, nextTime:0, stepDur:60/116/2,
+                  tension:0, tensionTarget:0, out:null, calmBus:null, chaseBus:null, noiseBuf:null };
+      function midiHz(m){ return 440*Math.pow(2,(m-69)/12); }
+      function bgmTone(midi, time, dur, type, vol, bus){
+        var o=AC.createOscillator(), g=AC.createGain();
+        o.type=type; o.frequency.value=midiHz(midi);
+        g.gain.setValueAtTime(0.0001, time);
+        g.gain.exponentialRampToValueAtTime(vol, time+0.025);
+        g.gain.exponentialRampToValueAtTime(0.0001, time+dur);
+        o.connect(g); g.connect(bus);
+        o.start(time); o.stop(time+dur+0.05);
+      }
+      function bgmKick(time, vol, bus){
+        var o=AC.createOscillator(), g=AC.createGain();
+        o.type="sine";
+        o.frequency.setValueAtTime(130, time);
+        o.frequency.exponentialRampToValueAtTime(44, time+0.11);
+        g.gain.setValueAtTime(vol, time);
+        g.gain.exponentialRampToValueAtTime(0.0001, time+0.13);
+        o.connect(g); g.connect(bus);
+        o.start(time); o.stop(time+0.16);
+      }
+      function bgmHat(time, vol, bus, open){
+        if(!bgm.noiseBuf){
+          var len=Math.floor(AC.sampleRate*0.25);
+          bgm.noiseBuf=AC.createBuffer(1, len, AC.sampleRate);
+          var d=bgm.noiseBuf.getChannelData(0);
+          for(var i=0;i<len;i++) d[i]=Math.random()*2-1;
+        }
+        var src=AC.createBufferSource(); src.buffer=bgm.noiseBuf;
+        var f=AC.createBiquadFilter(); f.type="highpass"; f.frequency.value=6800;
+        var g=AC.createGain();
+        var dur=open?0.16:0.045;
+        g.gain.setValueAtTime(vol, time);
+        g.gain.exponentialRampToValueAtTime(0.0001, time+dur);
+        src.connect(f); f.connect(g); g.connect(bus);
+        src.start(time); src.stop(time+dur+0.02);
+      }
+      // 4小節ループ。calm: C Am F G（のどか） / chase: Am Am F E（短調で前のめり）
+      var CALM_CHORDS=[ {root:48, tri:[60,64,67]}, {root:45, tri:[57,60,64]}, {root:41, tri:[53,57,60]}, {root:43, tri:[55,59,62]} ];
+      var CALM_MEL=[ [72,-1,76,-1,79,-1,76,-1], [69,-1,72,-1,76,-1,72,-1], [72,-1,77,-1,76,-1,72,-1], [71,-1,74,-1,79,-1,74,-1] ];
+      var CHASE_CHORDS=[ {root:45, tri:[57,60,64]}, {root:45, tri:[57,60,64]}, {root:41, tri:[53,57,60]}, {root:40, tri:[52,56,59]} ];
+      var CHASE_MEL=[ [81,-1,81,-1,81,-1,79,-1], [81,-1,81,-1,84,-1,81,-1], [77,-1,77,-1,81,-1,77,-1], [76,76,-1,79,-1,76,-1,83,-1] ];
+      function scheduleStep(step, time){
+        var bar=Math.floor(step/8)%4, s=step%8, sd=bgm.stepDur, i;
+        // --- 通常ループ（のどか） ---
+        var cc=CALM_CHORDS[bar], cm=CALM_MEL[bar][s];
+        if(s===0){
+          for(i=0;i<cc.tri.length;i++) bgmTone(cc.tri[i], time, sd*7.2, "triangle", 0.026, bgm.calmBus);
+          bgmKick(time, 0.09, bgm.calmBus);
+        }
+        if(s===0||s===4) bgmTone(cc.root, time, sd*1.8, "triangle", 0.08, bgm.calmBus);
+        if(s===6) bgmTone(cc.root+7, time, sd*1.6, "triangle", 0.065, bgm.calmBus);
+        if(cm>0) bgmTone(cm, time, sd*1.7, "triangle", 0.05, bgm.calmBus);
+        if(s===2||s===6) bgmHat(time, 0.014, bgm.calmBus, false);
+        // --- 緊迫ループ（トラック接近時） ---
+        var hc=CHASE_CHORDS[bar], hm=CHASE_MEL[bar][s];
+        bgmTone(hc.root+(s%2?12:0), time, sd*0.95, "square", 0.034, bgm.chaseBus); // 疾走する8分ベース
+        if(s===0||s===4){ for(i=0;i<hc.tri.length;i++) bgmTone(hc.tri[i]+12, time, sd*1.1, "sawtooth", 0.014, bgm.chaseBus); }
+        if(s%2===0) bgmKick(time, 0.12, bgm.chaseBus);
+        bgmHat(time, s%2?0.028:0.018, bgm.chaseBus, s===7);
+        if(hm>0) bgmTone(hm, time, sd*0.9, "square", 0.042, bgm.chaseBus);
+      }
+      function bgmTick(){
+        if(!bgm.on || !AC) return;
+        bgm.tension += (bgm.tensionTarget-bgm.tension)*0.06;
+        var t=bgm.tension, now=AC.currentTime;
+        bgm.calmBus.gain.setTargetAtTime(0.95*(1-t), now, 0.12);
+        bgm.chaseBus.gain.setTargetAtTime(0.95*t, now, 0.12);
+        bgm.stepDur = 60/(116+42*t)/2;   // 緊迫するほどテンポも上がる（116→158 BPM）
+        if(bgm.nextTime < now) bgm.nextTime = now+0.06;
+        while(bgm.nextTime < now+0.16){
+          scheduleStep(bgm.step, bgm.nextTime);
+          bgm.nextTime += bgm.stepDur;
+          bgm.step = (bgm.step+1)%32;
+        }
+      }
+      function startBGM(){
+        if(!AC) return;
+        if(!bgm.out){
+          bgm.out=AC.createGain(); bgm.out.gain.value=0; bgm.out.connect(master||AC.destination);
+          bgm.calmBus=AC.createGain(); bgm.calmBus.connect(bgm.out);
+          bgm.chaseBus=AC.createGain(); bgm.chaseBus.connect(bgm.out);
+        }
+        bgm.tension=0; bgm.tensionTarget=0;
+        bgm.step=0; bgm.nextTime=AC.currentTime+0.08; bgm.stepDur=60/116/2;
+        bgm.out.gain.cancelScheduledValues(AC.currentTime);
+        bgm.out.gain.setTargetAtTime(0.5, AC.currentTime, 0.25);
+        if(!bgm.on){ bgm.on=true; bgm.timer=setInterval(bgmTick, 30); }
+      }
+      function stopBGM(){
+        bgm.on=false;
+        if(bgm.timer){ clearInterval(bgm.timer); bgm.timer=null; }
+        if(AC && bgm.out) bgm.out.gain.setTargetAtTime(0, AC.currentTime, 0.18);
+      }
+
+      /* ================= Input: shake & tilt ================= */
+      var sensorLive=false, lastMag=null, lastImpulseAt=0, wantsMotion=false;
+      var scBadge=$("scBadge"), scNeedle=$("scNeedle"), scShakeBar=$("scShakeBar"), scNote=$("scNote");
+      var scPerm=$("scPerm"), scCnt=$("scCnt"), scValid=$("scValid"), scVals=$("scVals"), scEmbed=$("scEmbed");
+      var startBtnEl=$("startBtn");
+      var scShakeVis=0;
+      /* ---- センサー診断（どの段階で止まっているかを見える化する） ---- */
+      var permMotion="未確認", permOrient="未確認";   // 未確認 | 許可 | 拒否 | 許可不要 | エラー
+      var cntMotion=0, cntOrient=0;                  // イベントが発火した回数
+      var cntMotionValid=0, cntOrientValid=0;        // 中身（数値）のあるデータが届いた回数
+      var lastGamma=null, lastAccel=null, lastDiagPaint=0;
+      var isEmbedded=(function(){ try{ return window.self!==window.top; }catch(e){ return true; } })();
+      if(scEmbed) scEmbed.textContent = isEmbedded ? "埋め込み表示（プレビュー枠の中）" : "単独ページ";
+      function paintDiag(){
+        if(scPerm) scPerm.textContent = "振り："+permMotion+" ／ 傾き："+permOrient;
+        if(scCnt) scCnt.textContent = "振り "+cntMotion+"回 ・ 傾き "+cntOrient+"回";
+        if(scValid) scValid.textContent = "振り "+cntMotionValid+"回 ・ 傾き "+cntOrientValid+"回";
+        if(scVals) scVals.textContent = "傾き "+(lastGamma===null?"—":Math.round(lastGamma)+"°")+" ／ 加速度 "+(lastAccel===null?"—":lastAccel.toFixed(1));
+        if(!scBadge) return;
+        var txt, cls="";
+        if(sensorLive){ txt="受信中！"; cls="ok"; }
+        else if(permMotion==="拒否" || permOrient==="拒否"){ txt="拒否されています"; cls="bad"; }
+        else if((permMotion==="許可"||permOrient==="許可"||permMotion==="許可不要"||permOrient==="許可不要") && cntMotion+cntOrient>0 && cntMotionValid+cntOrientValid===0){ txt="中身が空で届いている"; }
+        else if(permMotion==="許可" || permOrient==="許可"){ txt="許可OK・受信待ち"; }
+        else txt="まだ届いていない";
+        scBadge.textContent=txt;
+        scBadge.classList.toggle("ok", cls==="ok");
+        scBadge.classList.toggle("bad", cls==="bad");
+        // ステップ2は「受信を確認できてから」押せるようにする（2段階フローの要）
+        if(startBtnEl) startBtnEl.disabled = !sensorLive;
+      }
+      function updateDiag(){
+        var now=performance.now();
+        if(now-lastDiagPaint<150) return;
+        lastDiagPaint=now;
+        paintDiag();
+      }
+      function markSensorLive(){
+        if(sensorLive) return;
+        sensorLive=true;
+        paintDiag();
+        if(scNote) scNote.textContent="センサーが届いています。スマホを傾けてレーン移動できます。";
+        $("sensorNote").style.display="none";
+      }
+      function addImpulse(v){
+        if(G.mode!=="playing") return;
+        G.speed = Math.min(MAX_SPEED, G.speed + v);
+      }
+      function vecMag(v){
+        if(!v || (v.x===null && v.y===null && v.z===null)) return null;
+        return Math.sqrt((v.x||0)*(v.x||0)+(v.y||0)*(v.y||0)+(v.z||0)*(v.z||0));
+      }
+      function onMotion(e){
+        cntMotion++;
+        var linMag = vecMag(e.acceleration);               // 重力を除いた加速度（振りの主信号）
+        var gravMag = vecMag(e.accelerationIncludingGravity);
+        if(linMag===null && gravMag===null){ updateDiag(); return; }  // 中身のないイベントは受信扱いしない（が、発火自体は数える）
+        cntMotionValid++;
+        lastAccel = (linMag!==null) ? linMag : gravMag;
+        markSensorLive();
+        updateDiag();
+        // 振りの強さ: 重力なし加速度を優先。無い環境では重力込みの大きさの変化量で代用
+        var strength = (linMag!==null) ? linMag : 0;
+        if(gravMag!==null){
+          if(lastMag!==null){
+            var d = Math.abs(gravMag-lastMag);
+            if(linMag===null || d*1.7>strength) strength = Math.max(strength, d*1.7);
+          }
+          lastMag = gravMag;
+        }
+        scShakeVis = Math.min(1, scShakeVis + strength/24);
+        if(G.mode!=="playing") return;
+        G.shakePower = Math.min(1, G.shakePower + strength/20);
+        var now = performance.now();
+        if(strength>2.3 && now-lastImpulseAt>70){
+          lastImpulseAt = now;
+          addImpulse(Math.min(1.3, 0.30 + strength*0.055));
+          G.shakes++;
+          if(rings.length<5) rings.push({life:0});
+          spawnDust(2);
+        }
+      }
+      window.addEventListener("devicemotion", onMotion);
+
+      /* ---- tilt ---- */
+      var tiltCooldown=0;
+      function tryTilt(dir){
+        if(G.mode!=="playing") return;
+        var now = performance.now();
+        if(now < tiltCooldown) return;
+        if(dir>0 && G.laneTarget < 1){ G.laneTarget++; tiltCooldown = now+240; }
+        else if(dir<0 && G.laneTarget > -1){ G.laneTarget--; tiltCooldown = now+240; }
+      }
+      function onOrient(e){
+        cntOrient++;
+        if(e.gamma===null || e.gamma===undefined){ updateDiag(); return; }
+        cntOrientValid++;
+        lastGamma = e.gamma;
+        markSensorLive();
+        if(scNeedle){
+          var g = Math.max(-45, Math.min(45, e.gamma));
+          scNeedle.style.left = (50 + g/45*50)+"%";
+        }
+        if(e.gamma > 12) tryTilt(1);
+        else if(e.gamma < -12) tryTilt(-1);
+        updateDiag();
+      }
+      window.addEventListener("deviceorientation", onOrient);
+
+      /* ================= Input: buttons / keys / swipe ================= */
+      function moveLane(dir){ G.laneTarget = Math.max(-1, Math.min(1, G.laneTarget + dir)); }
+      function bindHold(btn, fn){
+        var fire=function(ev){ ev.preventDefault(); fn(); };
+        btn.addEventListener("pointerdown", fire);
+      }
+      bindHold($("leftBtn"), function(){ moveLane(-1); });
+      bindHold($("rightBtn"), function(){ moveLane(1); });
+      var runBtn=$("runBtn");
+      runBtn.addEventListener("pointerdown", function(ev){
+        ev.preventDefault();
+        if(G.mode!=="playing") return;
+        addImpulse(0.62); G.shakes++;
+        G.shakePower = Math.min(1, G.shakePower+0.22);
+        if(rings.length<5) rings.push({life:0});
+        spawnDust(2);
+        initAudio();
+      });
+      var touchStartX=null;
+      canvas.addEventListener("pointerdown", function(e){ touchStartX=e.clientX; });
+      canvas.addEventListener("pointerup", function(e){
+        if(touchStartX===null) return;
+        var dx=e.clientX-touchStartX; touchStartX=null;
+        if(Math.abs(dx)>34) moveLane(dx>0?1:-1);
+      });
+      window.addEventListener("keydown", function(e){
+        if(G.mode!=="playing"){
+          if((e.code==="Space"||e.code==="Enter") && G.mode==="title"){ e.preventDefault(); startGame(false); }
+          return;
+        }
+        if(e.code==="ArrowLeft"||e.code==="KeyA") moveLane(-1);
+        else if(e.code==="ArrowRight"||e.code==="KeyD") moveLane(1);
+        else if(e.code==="Space"||e.code==="KeyJ"||e.code==="KeyF"){
+          e.preventDefault();
+          if(!e.repeat){ addImpulse(0.62); G.shakes++; G.shakePower=Math.min(1,G.shakePower+0.22); if(rings.length<5) rings.push({life:0}); }
+        }
+      });
+
+      /* ================= Spawning ================= */
+      var TYPES=["fence","crate","mud","imo","fence","crate","imo"];
+      function spawnObject(){
+        var lane = Math.floor(Math.random()*3)-1;
+        var type = TYPES[Math.floor(Math.random()*TYPES.length)];
+        // 同じ距離に全レーン塞ぎをしないよう、直前と同タイミングの重なりを避ける
+        objects.push({lane:lane, z:88+Math.random()*8, type:type, hit:false, wob:Math.random()*6.28});
+      }
+
+      /* ================= Particles ================= */
+      function spawnDust(n){
+        var p = pigScreenPos();
+        for(var i=0;i<n;i++){
+          particles.push({
+            x:p.x+(Math.random()-0.5)*p.s*0.7, y:p.y+p.s*0.32,
+            vx:(Math.random()-0.5)*30, vy:-14-Math.random()*26,
+            life:0, max:0.45+Math.random()*0.3, size:3+Math.random()*6,
+            color:"216,186,150"
+          });
+        }
+      }
+      function spawnSplash(){
+        var p=pigScreenPos();
+        for(var i=0;i<10;i++){
+          particles.push({
+            x:p.x+(Math.random()-0.5)*p.s*0.8, y:p.y+p.s*0.3,
+            vx:(Math.random()-0.5)*120, vy:-40-Math.random()*90,
+            life:0, max:0.4+Math.random()*0.25, size:2.5+Math.random()*4,
+            color:"122,84,50"
+          });
+        }
+      }
+      function spawnStars(x,y,s){
+        for(var i=0;i<8;i++){
+          particles.push({
+            x:x, y:y, vx:(Math.random()-0.5)*160, vy:(Math.random()-0.7)*140,
+            life:0, max:0.45, size:2.5+Math.random()*3, color:"242,160,7"
+          });
+        }
+      }
+
+      /* ================= Projection ================= */
+      function horizonY(){ return H*0.335; }
+      function groundH(){ return H - horizonY(); }
+      // t: 0=地平線, 1=手前
+      function projZ(z){ var t = 1 - z/95; return Math.pow(Math.max(t,0), 2.1); }
+      function objPos(lane, z){
+        var p = projZ(z);
+        var y = horizonY() + p*groundH()*0.96;
+        var laneW = (W*0.30) * (0.12 + p*0.95);
+        var x = W/2 + lane*laneW;
+        var s = 0.12 + p*1.5;
+        return {x:x, y:y, s:s, p:p};
+      }
+      function pigScreenPos(){
+        var y = horizonY() + groundH()*0.86;
+        var laneW = W*0.30;
+        var x = W/2 + G.laneF*laneW;
+        var s = (Math.min(W,H)/300 + 0.55) * growthScale();
+        return {x:x, y:y, s:s};
+      }
+
+      /* ================= Drawing ================= */
+      function drawBackground(){
+        // 空（夕方）
+        var sky = ctx.createLinearGradient(0,0,0,horizonY()*1.15);
+        sky.addColorStop(0,"#ffd9a0"); sky.addColorStop(0.75,"#ffb877"); sky.addColorStop(1,"#f7a55c");
+        ctx.fillStyle=sky; ctx.fillRect(0,0,W,horizonY()+2);
+        // 太陽
+        ctx.fillStyle="rgba(255,240,200,.9)";
+        ctx.beginPath(); ctx.arc(W*0.8, horizonY()*0.42, Math.min(W,H)*0.055, 0, 6.29); ctx.fill();
+        // 雲
+        ctx.fillStyle="rgba(255,246,230,.85)";
+        clouds.forEach(function(c){
+          var cx=c.x*W, cy=c.y*H, r=13*c.s*(W/380);
+          ctx.beginPath();
+          ctx.arc(cx,cy,r,0,6.29); ctx.arc(cx+r*0.9,cy+r*0.14,r*0.72,0,6.29); ctx.arc(cx-r*0.9,cy+r*0.16,r*0.66,0,6.29);
+          ctx.fill();
+        });
+        // 桜島
+        ctx.fillStyle="#8d7d90";
+        ctx.beginPath();
+        ctx.moveTo(W*0.02, horizonY());
+        ctx.lineTo(W*0.16, horizonY()*0.52);
+        ctx.lineTo(W*0.24, horizonY()*0.62);
+        ctx.lineTo(W*0.34, horizonY());
+        ctx.closePath(); ctx.fill();
+        ctx.fillStyle="rgba(240,240,240,.75)";
+        ctx.beginPath(); // 噴煙
+        ctx.arc(W*0.165, horizonY()*0.44, 7, 0, 6.29);
+        ctx.arc(W*0.185, horizonY()*0.36, 10, 0, 6.29);
+        ctx.arc(W*0.215, horizonY()*0.27, 13, 0, 6.29);
+        ctx.fill();
+        // 遠景の畑
+        ctx.fillStyle="#79b264"; ctx.fillRect(0,horizonY(),W,groundH());
+        ctx.fillStyle="#5da24e";
+        ctx.fillRect(0,horizonY(),W,groundH()*0.16);
+      }
+      function drawRoad(){
+        var hy=horizonY();
+        // 土の道（台形）
+        ctx.fillStyle="#c99a63";
+        ctx.beginPath();
+        ctx.moveTo(W/2-W*0.075, hy);
+        ctx.lineTo(W/2+W*0.075, hy);
+        ctx.lineTo(W/2+W*0.46, H);
+        ctx.lineTo(W/2-W*0.46, H);
+        ctx.closePath(); ctx.fill();
+        // レーンの区切り（流れる破線）
+        ctx.strokeStyle="rgba(255,244,220,.55)";
+        ctx.lineWidth=3; ctx.setLineDash([16,22]); ctx.lineDashOffset = G.roadOff%38;
+        [-0.5,0.5].forEach(function(off){
+          ctx.beginPath();
+          ctx.moveTo(W/2 + off*W*0.075, hy);
+          ctx.lineTo(W/2 + off*W*0.46, H);
+          ctx.stroke();
+        });
+        ctx.setLineDash([]);
+        // 道の両脇の柵（流れ）
+        drawSideFences();
+      }
+      function drawSideFences(){
+        var hy=horizonY();
+        ctx.strokeStyle="#8a6a42"; ctx.fillStyle="#a37e4f";
+        for(var side=-1; side<=1; side+=2){
+          for(var i=0;i<5;i++){
+            var zz = 95 - ((G.dist*2 + i*19) % 95);
+            var pos = objPos(0, Math.max(zz,2));
+            var x = W/2 + side*(W*0.36)*(0.12+pos.p*0.95) + side*W*0.06;
+            var w = 5*pos.s, h = 16*pos.s;
+            ctx.fillRect(x-w/2, pos.y-h, w, h);
+          }
+        }
+      }
+      function drawTruckBehind(){
+        // ギャップが小さいとき、背後にトラックが迫る
+        if(G.gap > 16 || G.mode!=="playing") return;
+        var p = pigScreenPos();
+        var k = 1 - G.gap/16; // 0..1
+        var tw = W*(0.34 + k*0.5), th = tw*0.78;
+        var tx = p.x, ty = p.y + p.s*36 + th*0.28 + Math.sin(G.t*30)*1.5;
+        ctx.save();
+        ctx.globalAlpha = 0.35 + k*0.65;
+        // 荷台
+        ctx.fillStyle="#e8e4da";
+        roundRect(tx-tw/2, ty-th, tw, th*0.72, 6); ctx.fill();
+        ctx.strokeStyle="#9a958a"; ctx.lineWidth=3; ctx.stroke();
+        ctx.fillStyle="#c33f1d";
+        ctx.font="800 "+Math.round(th*0.2)+"px 'M PLUS Rounded 1c',sans-serif";
+        ctx.textAlign="center"; ctx.textBaseline="middle";
+        ctx.fillText("出荷", tx, ty-th*0.64);
+        // キャブ
+        ctx.fillStyle="#4a6b8a";
+        roundRect(tx-tw*0.3, ty-th*0.3, tw*0.6, th*0.3, 5); ctx.fill();
+        ctx.fillStyle="#bcd9ea";
+        roundRect(tx-tw*0.24, ty-th*0.27, tw*0.48, th*0.13, 3); ctx.fill();
+        // ライト
+        ctx.fillStyle="#ffd94d";
+        ctx.beginPath(); ctx.arc(tx-tw*0.2, ty-th*0.05, tw*0.035,0,6.29); ctx.arc(tx+tw*0.2, ty-th*0.05, tw*0.035,0,6.29); ctx.fill();
+        ctx.restore();
+        if(k>0.55){
+          ctx.fillStyle="rgba(215,38,61,"+(0.10+0.08*Math.sin(G.t*10))+")";
+          ctx.fillRect(0,0,W,H);
+        }
+      }
+      function roundRect(x,y,w,h,r){
+        ctx.beginPath();
+        ctx.moveTo(x+r,y);
+        ctx.arcTo(x+w,y,x+w,y+h,r);
+        ctx.arcTo(x+w,y+h,x,y+h,r);
+        ctx.arcTo(x,y+h,x,y,r);
+        ctx.arcTo(x,y,x+w,y,r);
+        ctx.closePath();
+      }
+      function drawFence(x,y,s){
+        var w=64*s, h=30*s;
+        ctx.save(); ctx.translate(x,y);
+        ctx.fillStyle="rgba(0,0,0,.15)";
+        ctx.beginPath(); ctx.ellipse(0,2,w*0.55,h*0.16,0,0,6.29); ctx.fill();
+        ctx.fillStyle="#a37e4f";
+        ctx.fillRect(-w/2,-h, w, h*0.26);
+        ctx.fillRect(-w/2,-h*0.52, w, h*0.26);
+        ctx.fillStyle="#8a6a42";
+        ctx.fillRect(-w*0.42,-h*1.12, w*0.13, h*1.12);
+        ctx.fillRect(w*0.29,-h*1.12, w*0.13, h*1.12);
+        ctx.fillStyle="rgba(0,0,0,.18)";
+        ctx.fillRect(-w/2,-h, w, 2.5*s); ctx.fillRect(-w/2,-h*0.52, w, 2.5*s);
+        ctx.restore();
+      }
+      function drawCrate(x,y,s){
+        var w=52*s, h=44*s;
+        ctx.save(); ctx.translate(x,y);
+        ctx.fillStyle="rgba(0,0,0,.16)";
+        ctx.beginPath(); ctx.ellipse(0,2,w*0.58,h*0.14,0,0,6.29); ctx.fill();
+        ctx.fillStyle="#d9b380"; ctx.fillRect(-w/2,-h,w,h);
+        ctx.strokeStyle="#a87f4e"; ctx.lineWidth=3*s; ctx.strokeRect(-w/2,-h,w,h);
+        ctx.beginPath(); ctx.moveTo(-w/2,-h); ctx.lineTo(w/2,0); ctx.moveTo(w/2,-h); ctx.lineTo(-w/2,0); ctx.stroke();
+        ctx.fillStyle="#c33f1d";
+        ctx.fillRect(-w*0.30,-h*0.68, w*0.6, h*0.3);
+        ctx.fillStyle="#fff";
+        ctx.font="800 "+Math.round(h*0.24)+"px 'M PLUS Rounded 1c',sans-serif";
+        ctx.textAlign="center"; ctx.textBaseline="middle";
+        ctx.fillText("出荷", 0, -h*0.52);
+        ctx.restore();
+      }
+      function drawMud(x,y,s){
+        var w=74*s, h=16*s;
+        ctx.save(); ctx.translate(x,y);
+        ctx.fillStyle="#7a5432";
+        ctx.beginPath(); ctx.ellipse(0,0,w*0.5,h*0.5,0,0,6.29); ctx.fill();
+        ctx.fillStyle="#8f653c";
+        ctx.beginPath(); ctx.ellipse(-w*0.14,-h*0.1,w*0.26,h*0.3,0,0,6.29); ctx.fill();
+        ctx.fillStyle="rgba(255,255,255,.28)";
+        ctx.beginPath(); ctx.ellipse(w*0.16,-h*0.14,w*0.13,h*0.16,0,0,6.29); ctx.fill();
+        ctx.restore();
+      }
+      function drawImo(x,y,s,wob){
+        var w=30*s, h=20*s;
+        var bobY = Math.sin(wob + G.t*4)*3*s;
+        ctx.save(); ctx.translate(x, y-h*1.5+bobY);
+        ctx.fillStyle="rgba(0,0,0,.13)";
+        ctx.beginPath(); ctx.ellipse(0,h*1.55,w*0.5,h*0.2,0,0,6.29); ctx.fill();
+        // さつまいも
+        ctx.rotate(-0.5);
+        ctx.fillStyle="#a8546e";
+        ctx.beginPath(); ctx.ellipse(0,0,w*0.52,h*0.5,0,0,6.29); ctx.fill();
+        ctx.fillStyle="#c07a8d";
+        ctx.beginPath(); ctx.ellipse(-w*0.12,-h*0.14,w*0.28,h*0.2,0,0,6.29); ctx.fill();
+        // ツル
+        ctx.strokeStyle="#4c956c"; ctx.lineWidth=3*s; ctx.lineCap="round";
+        ctx.beginPath(); ctx.moveTo(w*0.4,-h*0.3); ctx.quadraticCurveTo(w*0.7,-h*0.7,w*0.55,-h*0.95); ctx.stroke();
+        ctx.fillStyle="#5da24e";
+        ctx.beginPath(); ctx.ellipse(w*0.55,-h*0.98,6*s,3.6*s,-0.5,0,6.29); ctx.fill();
+        // キラキラ
+        ctx.fillStyle="rgba(255,215,90,"+(0.55+0.4*Math.sin(G.t*6+wob))+")";
+        star( -w*0.55, -h*0.75, 4.4*s); star( w*0.62, -h*0.15, 3.4*s);
+        ctx.restore();
+      }
+      function star(x,y,r){
+        ctx.beginPath();
+        for(var i=0;i<8;i++){
+          var ang=i*Math.PI/4, rad=i%2? r*0.42:r;
+          var px=x+Math.cos(ang)*rad, py=y+Math.sin(ang)*rad;
+          if(i===0) ctx.moveTo(px,py); else ctx.lineTo(px,py);
+        }
+        ctx.closePath(); ctx.fill();
+      }
+      function drawPig(){
+        var p=pigScreenPos();
+        var runRate = G.mode==="playing" ? G.speed/MAX_SPEED : 0.25;
+        var bob = Math.abs(Math.sin(G.legPhase))*7*p.s*(0.4+runRate);
+        var x=p.x, y=p.y-bob, s=p.s;
+        var lean = (G.laneTarget-G.laneF)*0.35;
+        var blink = (G.invincible>0 && Math.floor(G.t*14)%2===0);
+        ctx.save(); ctx.translate(x,y); ctx.rotate(lean*0.4);
+        if(blink) ctx.globalAlpha=0.35;
+        // 影
+        ctx.fillStyle="rgba(60,35,15,.25)";
+        ctx.beginPath(); ctx.ellipse(0, 36*s+bob, 34*s, 8*s, 0, 0, 6.29); ctx.fill();
+        // 脚（交互）
+        ctx.fillStyle="#1b1815";
+        var l1 = Math.sin(G.legPhase)>0 ? 4*s : -2*s;
+        var l2 = -l1;
+        roundRect(-24*s, 22*s+l1, 10*s, 15*s, 4*s); ctx.fill();
+        roundRect(14*s, 22*s+l2, 10*s, 15*s, 4*s); ctx.fill();
+        roundRect(-12*s, 24*s+l2, 9*s, 13*s, 4*s); ctx.fill();
+        roundRect(4*s, 24*s+l1, 9*s, 13*s, 4*s); ctx.fill();
+        // 体（後ろ姿）
+        ctx.fillStyle="#26221f";
+        ctx.beginPath(); ctx.ellipse(0,0,36*s,30*s,0,0,6.29); ctx.fill();
+        ctx.fillStyle="#322c27";
+        ctx.beginPath(); ctx.ellipse(-8*s,-8*s,20*s,14*s,-0.5,0,6.29); ctx.fill();
+        // 耳
+        ctx.fillStyle="#26221f";
+        ctx.beginPath(); ctx.moveTo(-26*s,-22*s); ctx.lineTo(-34*s,-38*s); ctx.lineTo(-14*s,-32*s); ctx.closePath(); ctx.fill();
+        ctx.beginPath(); ctx.moveTo(26*s,-22*s); ctx.lineTo(34*s,-38*s); ctx.lineTo(14*s,-32*s); ctx.closePath(); ctx.fill();
+        ctx.fillStyle="#e8a0a8";
+        ctx.beginPath(); ctx.moveTo(-25*s,-25*s); ctx.lineTo(-29*s,-33*s); ctx.lineTo(-19*s,-29*s); ctx.closePath(); ctx.fill();
+        ctx.beginPath(); ctx.moveTo(25*s,-25*s); ctx.lineTo(29*s,-33*s); ctx.lineTo(19*s,-29*s); ctx.closePath(); ctx.fill();
+        // くるくる尻尾
+        ctx.strokeStyle="#e8a0a8"; ctx.lineWidth=4*s; ctx.lineCap="round";
+        ctx.beginPath();
+        var tw=Math.sin(G.t*9)*2*s;
+        ctx.arc(tw*0.4, -6*s, 6*s, Math.PI*0.2, Math.PI*1.7);
+        ctx.stroke();
+        ctx.beginPath(); ctx.arc(tw*0.4, -7*s, 3*s, 0, 6.29); ctx.stroke();
+        ctx.restore();
+        // 振りリング
+        rings.forEach(function(r){
+          var rr = 30*s + r.life*70*s;
+          ctx.strokeStyle="rgba(255,255,255,"+(0.75*(1-r.life))+")";
+          ctx.lineWidth=3;
+          ctx.beginPath(); ctx.arc(x, y, rr, 0, 6.29); ctx.stroke();
+        });
+      }
+      function drawObjects(){
+        var sorted = objects.slice().sort(function(a,b){ return b.z-a.z; });
+        sorted.forEach(function(o){
+          var pos=objPos(o.lane, o.z);
+          if(o.type==="fence") drawFence(pos.x,pos.y,pos.s);
+          else if(o.type==="crate") drawCrate(pos.x,pos.y,pos.s);
+          else if(o.type==="mud") drawMud(pos.x,pos.y,pos.s*1.15);
+          else if(o.type==="imo") drawImo(pos.x,pos.y,pos.s,o.wob);
+        });
+      }
+      function drawParticles(dt){
+        particles = particles.filter(function(pt){
+          pt.life+=dt; pt.x+=pt.vx*dt; pt.y+=pt.vy*dt; pt.vy+=160*dt;
+          var k=1-pt.life/pt.max;
+          if(k<=0) return false;
+          ctx.fillStyle="rgba("+pt.color+","+(0.55*k)+")";
+          ctx.beginPath(); ctx.arc(pt.x,pt.y,pt.size*k+0.6,0,6.29); ctx.fill();
+          return true;
+        });
+      }
+
+      /* ================= HUD ================= */
+      var hudDist=$("hudDist"), hudScore=$("hudScore"), hudTime=$("hudTime"),
+          hudSpeed=$("hudSpeed"), speedFill=$("speedFill"), gapFill=$("gapFill"),
+          shakeFill=$("shakeFill"), gapChip=$("gapChip"), hudPhase=$("hudPhase"),
+          hudImo=$("hudImo"), hudStage=$("hudStage"), hudWeight=$("hudWeight"), hudPrice=$("hudPrice");
+      function updateHUD(){
+        hudDist.textContent = Math.floor(G.dist);
+        hudScore.textContent = G.score;
+        hudTime.textContent = G.t.toFixed(1);
+        var gi = growthInfo(G.imo);
+        if(hudImo) hudImo.textContent = G.imo;
+        if(hudStage) hudStage.textContent = gi.stage;
+        if(hudWeight) hudWeight.textContent = gi.weight;
+        if(hudPrice) hudPrice.textContent = gi.price.toLocaleString("ja-JP");
+        var kmh = Math.round(G.speed*3.6);
+        hudSpeed.textContent = kmh+" km/h";
+        speedFill.style.width = (G.speed/MAX_SPEED*100)+"%";
+        var gp = Math.max(0, G.gap/GAP_MAX*100);
+        gapFill.style.width = gp+"%";
+        gapFill.style.background = G.gap<10 ? "#ff5a4d" : (G.gap<20 ? "#f2a007" : "#7bd88f");
+        gapChip.classList.toggle("danger", G.gap<9);
+        if(hudPhase) hudPhase.textContent = "Lv."+G.phase;
+        shakeFill.style.width = (G.shakePower*100)+"%";
+      }
+      function flash(text){
+        var f=$("flashMsg"); f.textContent=text;
+        f.classList.remove("pop"); void f.offsetWidth; f.classList.add("pop");
+      }
+
+      /* ================= Game flow ================= */
+      function startGame(withMotion){
+        initAudio();
+        reset();
+        G.mode="playing";
+        $("startScreen").style.display="none";
+        $("overScreen").classList.remove("on");
+        $("hud").classList.add("on");
+        $("controls").classList.add("on");
+        flash("逃げろー！");
+        goSound();
+        startBGM();
+      }
+      function gameOver(){
+        G.mode="over";
+        stopBGM();
+        overSound();
+        if(navigator.vibrate) navigator.vibrate([90,60,160]);
+        $("stDist").textContent=Math.floor(G.dist);
+        $("resultSub").textContent="追跡レベル Lv."+G.phase+" の猛追に、ついに捕まった…";
+        $("stScore").textContent=G.score;
+        var gi = growthInfo(G.imo);
+        $("stImo").textContent=G.imo;
+        $("stStage").textContent=gi.stage;
+        $("stWeight").textContent=gi.weight;
+        $("stPrice").textContent=gi.price.toLocaleString("ja-JP");
+        $("stPriceSub").textContent=gi.stage+" ・ "+gi.weight+"kg × ¥"+gi.unit.toLocaleString("ja-JP")+"/kg（さつまいも "+G.imo+"個）";
+        $("stShakes").textContent=G.shakes;
+        $("stTop").textContent=Math.round(G.topSpeed*3.6);
+        $("controls").classList.remove("on");
+        setTimeout(function(){ $("overScreen").classList.add("on"); }, 650);
+      }
+      /* 許可を取り、結果（許可／拒否）を必ず記録する。結果を見ずに進まないのが今回の肝 */
+      async function requestPermissions(){
+        wantsMotion=true;
+        try{
+          if(typeof DeviceMotionEvent!=="undefined" && typeof DeviceMotionEvent.requestPermission==="function"){
+            var r1 = await DeviceMotionEvent.requestPermission();
+            permMotion = (r1==="granted") ? "許可" : "拒否";
+          } else permMotion = "許可不要";
+        }catch(e){ permMotion = "エラー"; }
+        paintDiag();
+        try{
+          if(typeof DeviceOrientationEvent!=="undefined" && typeof DeviceOrientationEvent.requestPermission==="function"){
+            var r2 = await DeviceOrientationEvent.requestPermission();
+            permOrient = (r2==="granted") ? "許可" : "拒否";
+          } else permOrient = "許可不要";
+        }catch(e){ permOrient = "エラー"; }
+        paintDiag();
+        // 許可したのに届かない場合、止まっている段階に合わせた案内を出す
+        setTimeout(function(){
+          if(sensorLive || G.mode!=="title" || !scNote) return;
+          if(permMotion==="拒否" || permOrient==="拒否"){
+            scNote.textContent="許可が「拒否」になっています。一度拒否するとダイアログは二度と出ません。ブラウザで muse.ai のサイトデータを削除して開き直すと、もう一度ダイアログが出るようになります。";
+          } else if(cntMotion+cntOrient===0){
+            scNote.textContent = isEmbedded
+              ? "許可は取れましたが、センサーのイベントが1回も届いていません。いまは埋め込み表示（プレビュー枠の中）で、枠の側がセンサーを遮断している可能性があります。ブラウザでこのページを直接開くと届くことがあります。"
+              : "許可は取れましたが、センサーのイベントが1回も届いていません。開いているブラウザがこのページにセンサーを渡していない可能性があります。Safari／Chromeで開き直してみてください。";
+          } else if(cntMotionValid+cntOrientValid===0){
+            scNote.textContent="イベント自体は届いていますが、中身（数値）が空です。許可が実際には下りていないときの典型的な症状です。muse.ai のサイトデータを削除して開き直し、ダイアログで「許可」を押してみてください。";
+          }
+        }, 2600);
+      }
+      $("permBtn").addEventListener("click", async function(){
+        initAudio();
+        await requestPermissions();
+      });
+      /* サウンド ON/OFF（BGM・効果音まとめて） */
+      var soundBtn=$("soundBtn");
+      soundBtn.addEventListener("click", function(){
+        soundOn=!soundOn;
+        soundBtn.classList.toggle("off", !soundOn);
+        soundBtn.setAttribute("aria-pressed", soundOn ? "true" : "false");
+        initAudio();
+        if(AC && master) master.gain.setTargetAtTime(soundOn?0.9:0, AC.currentTime, 0.03);
+      });
+      $("startBtn").addEventListener("click", function(){ startGame(true); });
+      $("startPlainBtn").addEventListener("click", function(){ wantsMotion=false; startGame(false); });
+      $("retryBtn").addEventListener("click", async function(){
+        if(wantsMotion && !sensorLive && permMotion!=="許可" && permMotion!=="許可不要") await requestPermissions();
+        startGame(true);
+      });
+      $("toTitleBtn").addEventListener("click", function(){
+        stopBGM();
+        G.mode="title";
+        $("overScreen").classList.remove("on");
+        $("hud").classList.remove("on");
+        $("startScreen").style.display="flex";
+      });
+      $("shareBtn").addEventListener("click", function(){
+        var gi2 = growthInfo(G.imo);
+        var text = "Kurobuta Dash（ボタン連打＆傾き版・試作）で "+Math.floor(G.dist)+"m 逃げた！ スコア "+G.score+"点、さつまいも "+G.imo+"個食べて「"+gi2.stage+"」（"+gi2.weight+"kg）に成長、出荷金額 ¥"+gi2.price.toLocaleString("ja-JP")+"！ 追跡Lv."+G.phase+" まで逃げ切った。捕まるな黒豚！ #KurobutaDash #黒豚 #南さつま";
+        window.open("https://twitter.com/intent/tweet?text="+encodeURIComponent(text), "_blank", "noopener");
+      });
+
+      /* ================= Update ================= */
+      function update(dt){
+        if(G.mode!=="playing"){
+          clouds.forEach(function(c){ c.x+=c.v*dt; if(c.x>1.15) c.x=-0.15; });
+          rings = rings.filter(function(r){ r.life+=dt*2.2; return r.life<1; });
+          // センサーチェックの振りバーを減衰表示
+          scShakeVis = Math.max(0, scShakeVis - dt*2.4);
+          if(scShakeBar) scShakeBar.style.width = (scShakeVis*100)+"%";
+          return;
+        }
+        G.t += dt;
+        // スピード減衰（連打しないと失速。時間が経つほど失速も強くなり、連打の要求量が上がる）
+        G.speed -= dt*(1.05 + G.speed*0.14 + Math.min(1.15, G.t*0.0075));
+        if(G.mudTimer>0){ G.mudTimer-=dt; G.speed -= dt*2.2; }
+        if(G.speed<0) G.speed=0;
+        G.topSpeed = Math.max(G.topSpeed, G.speed);
+        // 難易度：300mごとに追跡レベルが上がり、トラックが一段速くなる（時間経過でも少しずつ加速）
+        G.phase = 1 + Math.floor(G.dist/300);
+        if(G.phase > G.lastPhase){
+          G.lastPhase = G.phase;
+          flash("トラック加速！ 追跡Lv."+G.phase);
+          warnSound();
+        }
+        G.truckSpeed = Math.min(13.1, 5.4 + G.t*0.05 + (G.phase-1)*0.5);
+        // 距離とギャップ
+        G.dist += G.speed*dt;
+        G.scoreF += G.speed*dt*2;
+        G.score = Math.floor(G.scoreF);
+        G.gap += (G.speed - G.truckSpeed)*dt*0.85;
+        G.gap = Math.min(GAP_MAX, G.gap);
+        // BGMの緊迫度：トラックが見える距離（18m）から迫るほど0→1へ
+        var btt = G.gap>=18 ? 0 : Math.max(0, Math.min(1, (18-G.gap)/13));
+        bgm.tensionTarget += (btt-bgm.tensionTarget)*Math.min(1, dt*2.5);
+        G.roadOff += G.speed*dt*9;
+        G.legPhase += dt*(3 + G.speed*1.55);
+        G.shakePower = Math.max(0, G.shakePower - dt*1.7);
+        if(G.invincible>0) G.invincible-=dt;
+        // 足音
+        G.stepAcc += G.speed*dt;
+        if(G.stepAcc>2.4){ G.stepAcc=0; if(G.speed>1.2) stepSound(); if(G.speed>6) spawnDust(1); }
+        // 警告
+        if(G.gap<10){
+          G.warnTimer-=dt;
+          if(G.warnTimer<=0){ G.warnTimer=0.62; warnSound(); if(navigator.vibrate) navigator.vibrate(25); }
+        }
+        // モーションで始めたのにセンサーが届いていない場合の案内（届いたら自動で消える）
+        if(wantsMotion && !G.sensorWarned && G.t>3.5 && !sensorLive){
+          G.sensorWarned=true;
+          var sn=$("sensorNote");
+          if(permMotion==="拒否" || permOrient==="拒否"){
+            sn.textContent="モーション許可が「拒否」のため、傾き操作は使えません。レーン移動は画面の左右ボタンでOK。そのまま遊ぶか、タイトルに戻ってセンサーチェックの案内を確認してください。";
+          } else if(cntMotion+cntOrient===0 && isEmbedded){
+            sn.textContent="傾きセンサーが届いていません。埋め込み表示では遮断されることがあります。レーン移動は画面の左右ボタンでOK";
+          } else if(cntMotion+cntOrient>0 && cntMotionValid+cntOrientValid===0){
+            sn.textContent="センサーの中身が空で届いています（許可が下りていない可能性）。レーン移動は画面の左右ボタンでOK";
+          } else {
+            sn.textContent="傾きセンサー無反応…レーン移動は画面の左右ボタンでOK";
+          }
+          sn.style.display="block";
+        }
+        // スポーン（レベルが上がるほど間隔が短くなり、別レーンへの同時出現も増える）
+        G.spawnTimer -= dt*(0.55 + G.speed/MAX_SPEED*0.75);
+        if(G.spawnTimer<=0){
+          G.spawnTimer = Math.max(0.42, (0.85 + Math.random()*0.75) / (1 + (G.phase-1)*0.14));
+          spawnObject();
+          if(G.phase>=2 && Math.random() < Math.min(0.5, (G.phase-1)*0.13)) spawnObject();
+        }
+        // レーン移動
+        G.laneF += (G.laneTarget - G.laneF)*Math.min(1, dt*10);
+        // オブジェクト更新・判定
+        var pigLane = Math.round(G.laneF);
+        objects = objects.filter(function(o){
+          o.z -= G.speed*dt;
+          if(o.z < 1.6 && !o.hit){
+            if(Math.abs(o.lane - G.laneF) < 0.55){
+              o.hit = true;
+              var pos = objPos(o.lane, Math.max(o.z,1));
+              if(o.type==="imo"){
+                var prevStage = growthInfo(G.imo).stage;
+                G.imo++;
+                var gi = growthInfo(G.imo);
+                G.scoreF += 50; addImpulse(0.85);
+                pickupSound(); spawnStars(pos.x, pos.y-24*pos.s, pos.s);
+                if(gi.stage !== prevStage){
+                  // 成長段階アップ：スコアボーナス＋専用ファンファーレ
+                  G.scoreF += 150; G.score = Math.floor(G.scoreF);
+                  growSound();
+                  flash("成長！ "+gi.stage+"になった +150");
+                } else {
+                  G.score = Math.floor(G.scoreF);
+                  flash("さつまいも +50（"+G.imo+"個目）");
+                }
+                return false;
+              } else if(o.type==="mud"){
+                G.mudTimer = 0.9; mudSound(); spawnSplash();
+                flash("泥んこ！減速…");
+                return false;
+              } else if(G.invincible<=0){
+                G.invincible = 1.25;
+                G.speed *= 0.42; G.gap = Math.max(0.5, G.gap-5);
+                crashSound(); if(navigator.vibrate) navigator.vibrate(70);
+                spawnStars(pos.x, pos.y-20*pos.s, pos.s);
+                flash(o.type==="fence" ? "柵に激突！" : "出荷箱に激突！");
+                return false;
+              }
+            }
+          }
+          return o.z > -3;
+        });
+        rings = rings.filter(function(r){ r.life+=dt*2.2; return r.life<1; });
+        // 雲
+        clouds.forEach(function(c){ c.x+=c.v*dt; if(c.x>1.15) c.x=-0.15; });
+        // ゲームオーバー
+        if(G.gap<=0){
+          G.gap=0; updateHUD();
+          gameOver();
+          return;
+        }
+        updateHUD();
+      }
+
+      /* ================= Main loop ================= */
+      var lastT=performance.now();
+      function frame(now){
+        var dt=Math.min(0.05,(now-lastT)/1000); lastT=now;
+        if(document.hidden){ requestAnimationFrame(frame); return; }
+        updateDiag();
+        update(dt);
+        // 描画
+        ctx.clearRect(0,0,W,H);
+        drawBackground();
+        drawRoad();
+        drawObjects();
+        drawTruckBehind();
+        drawPig();
+        drawParticles(dt);
+        requestAnimationFrame(frame);
+      }
+
+      document.addEventListener("gesturestart", function(e){ e.preventDefault(); });
+      document.addEventListener("dblclick", function(e){ e.preventDefault(); }, {passive:false});
+
+      resize();
+      paintDiag();
+      if(window.lucide) lucide.createIcons();
+      requestAnimationFrame(function(){ resize(); });
+      requestAnimationFrame(frame);
+    })();
+    </script>
+  </body>
+</html>
